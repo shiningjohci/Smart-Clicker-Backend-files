@@ -18,6 +18,7 @@ CORS(app,
          "origins": ["https://shiningjohci.github.io"],
          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+         "expose_headers": ["Content-Type", "Authorization"],
          "supports_credentials": True,
          "max_age": 86400
      }},
@@ -36,11 +37,19 @@ def after_request(response):
     logger.debug(f"Request Headers: {dict(request.headers)}")
     logger.debug(f"Response Headers before modification: {dict(response.headers)}")
     
+    # CORS headers
     response.headers.add('Access-Control-Allow-Origin', 'https://shiningjohci.github.io')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With')
     response.headers.add('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     response.headers.add('Access-Control-Max-Age', '86400')
+    response.headers.add('Access-Control-Expose-Headers', 'Content-Type, Authorization')
+    
+    # Security headers
+    response.headers.add('Referrer-Policy', 'no-referrer-when-downgrade')
+    response.headers.add('X-Content-Type-Options', 'nosniff')
+    response.headers.add('X-Frame-Options', 'DENY')
+    response.headers.add('X-XSS-Protection', '1; mode=block')
     
     logger.debug(f"Response Headers after modification: {dict(response.headers)}")
     return response
