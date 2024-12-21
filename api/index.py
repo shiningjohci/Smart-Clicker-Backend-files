@@ -9,36 +9,73 @@ import json
 import sys
 import traceback
 
+# 设置日志
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# 初始化Flask应用
 app = Flask(__name__)
 CORS(app)
 
 # 环境变量
-MONGODB_URI = os.getenv('MONGODB_URI', 'your-mongodb-uri')
-SECRET_KEY = os.getenv('JWT_SECRET', 'your-secret-key')
+MONGODB_URI = os.getenv('MONGODB_URI')
+SECRET_KEY = os.getenv('JWT_SECRET')
 
-# 设置日志
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# 记录环境变量状态（不记录具体值）
+logger.info(f"MONGODB_URI is {'set' if MONGODB_URI else 'not set'}")
+logger.info(f"JWT_SECRET is {'set' if SECRET_KEY else 'not set'}")
 
-# 连接MongoDB
+if not MONGODB_URI:
+    logger.error("MONGODB_URI environment variable is not set")
+    raise ValueError("MONGODB_URI environment variable is required")
+
+if not SECRET_KEY:
+    logger.error("JWT_SECRET environment variable is not set")
+    raise ValueError("JWT_SECRET environment variable is required")
+
+# MongoDB连接函数
+def get_db_connection():
+    try:
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        # 验证连接
+        client.server_info()
+        logger.info("MongoDB connection successful")
+        return client
+    except Exception as e:
+        logger.error(f"MongoDB connection error: {str(e)}")
+        raise
+
+# 初始化MongoDB连接
 try:
-    client = MongoClient(MONGODB_URI)
+    client = get_db_connection()
     db = client.get_database('user_auth_db')
     users_collection = db.get_collection('users')
-    logger.info("MongoDB connection successful")
 except Exception as e:
-    logger.error(f"MongoDB connection error: {str(e)}")
+    logger.error(f"Failed to initialize MongoDB: {str(e)}")
     raise
 
 # 根路由
 @app.route('/')
 def index():
-    logger.info("Root route accessed")
-    return jsonify({
-        'status': 'ok',
-        'message': 'API is running'
-    })
+    try:
+        # 测试MongoDB连接
+        users_collection.find_one({})
+        logger.info("Root route accessed, MongoDB connection test successful")
+        return jsonify({
+            'status': 'ok',
+            'message': 'API is running'
+        })
+    except Exception as e:
+        logger.error(f"Error in root route: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Database connection error',
+            'error': str(e)
+        }), 500
 
 # 错误处理
 @app.errorhandler(404)
@@ -202,6 +239,8 @@ def test_route():
 def handler(request):
     try:
         logger.info(f"Request received: {request.get('path', '/')}")
+        logger.info(f"Request method: {request.get('method', 'GET')}")
+        logger.info(f"Request headers: {request.get('headers', {})}")
         
         # Create a new WSGI environment dictionary
         environ = {
@@ -216,7 +255,9 @@ def handler(request):
             'PATH_INFO': request.get('path', '/'),
             'SERVER_NAME': 'vercel',
             'SERVER_PORT': '443',
-            'SERVER_PROTOCOL': 'HTTP/1.1'
+            'SERVER_PROTOCOL': 'HTTP/1.1',
+            'CONTENT_TYPE': request.get('headers', {}).get('content-type', ''),
+            'CONTENT_LENGTH': request.get('headers', {}).get('content-length', ''),
         }
 
         # Add HTTP headers
@@ -236,6 +277,9 @@ def handler(request):
         # Get response body
         response_body = app(environ, start_response)
         
+        # Log response
+        logger.info(f"Response status: {response_data['status']}")
+        
         # Return response
         return {
             'statusCode': int(response_data['status'].split()[0]),
@@ -243,13 +287,15 @@ def handler(request):
             'body': b''.join(response_body).decode('utf-8')
         }
     except Exception as e:
-        logger.error(f"Error in handler: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        error_message = str(e)
+        stack_trace = traceback.format_exc()
+        logger.error(f"Error in handler: {error_message}")
+        logger.error(f"Traceback: {stack_trace}")
         return {
             'statusCode': 500,
             'body': json.dumps({
                 'error': 'Internal Server Error',
-                'message': str(e),
-                'traceback': traceback.format_exc()
+                'message': error_message,
+                'traceback': stack_trace
             })
         }
