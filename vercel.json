@@ -29,7 +29,7 @@
             "headers": [
                 {
                     "key": "Access-Control-Allow-Origin",
-                    "value": "*"
+                    "value": "https://shiningjohci.github.io"
                 },
                 {
                     "key": "Access-Control-Allow-Methods",
