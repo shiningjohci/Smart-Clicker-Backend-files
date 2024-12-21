@@ -16,17 +16,15 @@ app = Flask(__name__)
 
 # CORS配置
 CORS(app, 
-    origins=["https://shiningjohci.github.io"],
-    allow_credentials=True,
-    supports_credentials=True,
     resources={
         r"/api/*": {
             "origins": ["https://shiningjohci.github.io"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
             "expose_headers": ["Content-Type", "Authorization"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "supports_credentials": True,
-            "send_wildcard": False
+            "max_age": 600,  # 10分钟缓存预检请求结果
+            "allow_credentials": True
         }
     })
 
@@ -41,24 +39,41 @@ users_collection = db.users
 def before_request():
     logger.debug(f"Incoming {request.method} request to {request.path}")
     logger.debug(f"Request Headers: {dict(request.headers)}")
+    logger.debug(f"Request Origin: {request.headers.get('Origin')}")
+    logger.debug(f"Request Content-Type: {request.headers.get('Content-Type')}")
 
 # 全局响应处理
 @app.after_request
 def after_request(response):
     logger.debug(f"Response Status: {response.status}")
-    logger.debug(f"Response Headers: {dict(response.headers)}")
+    logger.debug(f"Response Headers before: {dict(response.headers)}")
     
-    # 确保CORS头部正确设置
-    response.headers.add('Access-Control-Allow-Origin', 'https://shiningjohci.github.io')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With')
+    origin = request.headers.get('Origin')
+    if origin == "https://shiningjohci.github.io":
+        # CORS headers
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '600'
+        
+        # 处理 Content-Type
+        if request.method == 'OPTIONS':
+            response.headers['Content-Type'] = 'text/plain'
+        elif 'Content-Type' not in response.headers:
+            response.headers['Content-Type'] = 'application/json'
+        
+        # 缓存控制
+        response.headers['Vary'] = 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'
+        response.headers['Cache-Control'] = 'no-cache'
     
-    # 添加安全头部
-    response.headers.add('X-Content-Type-Options', 'nosniff')
-    response.headers.add('X-Frame-Options', 'DENY')
-    response.headers.add('X-XSS-Protection', '1; mode=block')
+    # 安全头部
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
     
+    logger.debug(f"Response Headers after: {dict(response.headers)}")
     return response
 
 # 处理OPTIONS请求
@@ -66,7 +81,10 @@ def after_request(response):
 @app.route('/<path:path>', methods=['OPTIONS'])
 def handle_options(path):
     logger.debug(f"Handling OPTIONS request for path: {path}")
+    logger.debug(f"OPTIONS request headers: {dict(request.headers)}")
+    
     response = jsonify({'status': 'ok'})
+    response.headers['Content-Type'] = 'text/plain'
     return response, 200
 
 # 根路由
