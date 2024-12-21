@@ -3,7 +3,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 import logging
 
@@ -150,15 +150,42 @@ def add_vip():
         if not username:
             return jsonify({"error": "Missing username"}), 400
             
+        current_time = datetime.utcnow()
+        # 默认VIP期限为30天
+        vip_end_time = current_time + timedelta(days=30)
+        
+        # 创建新的VIP历史记录
+        vip_record = {
+            "action": "添加VIP",
+            "timestamp": current_time,
+            "end_time": vip_end_time
+        }
+        
         result = users_collection.update_one(
             {"username": username},
-            {"$set": {"is_vip": True, "updated_at": datetime.utcnow()}}
+            {
+                "$set": {
+                    "is_vip": True,
+                    "vip_start_time": current_time,
+                    "vip_end_time": vip_end_time,
+                    "updated_at": current_time
+                },
+                "$push": {
+                    "vip_history": vip_record
+                }
+            }
         )
         
         if result.modified_count == 0:
-            return jsonify({"error": "User not found or already VIP"}), 404
+            return jsonify({"error": "User not found"}), 404
             
-        return jsonify({"message": "VIP status added successfully"}), 200
+        return jsonify({
+            "message": "VIP status added successfully",
+            "vip_details": {
+                "start_time": current_time,
+                "end_time": vip_end_time
+            }
+        }), 200
         
     except Exception as e:
         logger.error(f"Add VIP error: {str(e)}")
@@ -214,4 +241,29 @@ def update_user(username):
         
     except Exception as e:
         logger.error(f"Update user error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# 获取VIP详情
+@app.route('/api/vip-details/<username>', methods=['GET'])
+def get_vip_details(username):
+    try:
+        logger.debug(f"Processing get VIP details request for {username}")
+        user = users_collection.find_one({"username": username})
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        # 获取或初始化VIP历史记录
+        vip_history = user.get('vip_history', [])
+        
+        return jsonify({
+            "username": username,
+            "is_vip": user.get('is_vip', False),
+            "vip_start_time": user.get('vip_start_time'),
+            "vip_end_time": user.get('vip_end_time'),
+            "vip_history": vip_history
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Get VIP details error: {str(e)}")
         return jsonify({"error": str(e)}), 500 
