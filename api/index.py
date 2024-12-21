@@ -6,6 +6,7 @@ import hashlib
 import os
 from pymongo import MongoClient
 from http.server import BaseHTTPRequestHandler
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -171,12 +172,51 @@ def test_route():
 
 # Vercel handler
 def handler(request):
-    if request.method == 'POST':
-        # Handle POST request
-        return app(request.environ, lambda x, y: y)
-    elif request.method == 'GET':
-        # Handle GET request
-        return app(request.environ, lambda x, y: y)
-    else:
-        # Handle other methods
-        return app(request.environ, lambda x, y: y)
+    try:
+        # Create a new WSGI environment dictionary
+        environ = {
+            'wsgi.version': (1, 0),
+            'wsgi.url_scheme': 'https',
+            'wsgi.input': request.get('body', ''),
+            'wsgi.errors': '',
+            'wsgi.multithread': False,
+            'wsgi.multiprocess': False,
+            'wsgi.run_once': False,
+            'REQUEST_METHOD': request.get('method', 'GET'),
+            'PATH_INFO': request.get('path', '/'),
+            'SERVER_NAME': 'vercel',
+            'SERVER_PORT': '443',
+        }
+
+        # Add HTTP headers
+        if 'headers' in request:
+            for key, value in request['headers'].items():
+                key = key.upper().replace('-', '_')
+                if key not in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
+                    key = f'HTTP_{key}'
+                environ[key] = value
+
+        # Handle the request
+        response_data = {}
+        def start_response(status, headers):
+            response_data['status'] = status
+            response_data['headers'] = headers
+
+        # Get response body
+        response_body = app(environ, start_response)
+        
+        # Return response
+        return {
+            'statusCode': int(response_data['status'].split()[0]),
+            'headers': dict(response_data['headers']),
+            'body': b''.join(response_body).decode('utf-8')
+        }
+    except Exception as e:
+        print(f"Error in handler: {str(e)}")  # 添加日志
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': 'Internal Server Error',
+                'message': str(e)
+            })
+        }
