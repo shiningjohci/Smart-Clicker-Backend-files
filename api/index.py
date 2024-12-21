@@ -131,11 +131,16 @@ def register():
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         
         # 创建新用户
+        current_time = datetime.datetime.utcnow()
         user = {
             'username': username,
             'password': hashed_password,
             'is_vip': False,
-            'created_at': datetime.datetime.utcnow()
+            'created_at': current_time,
+            'last_login_time': current_time,
+            'vip_start_time': None,
+            'vip_end_time': None,
+            'vip_history': []
         }
         result = users_collection.insert_one(user)
         
@@ -167,6 +172,12 @@ def login():
         user = users_collection.find_one({'username': username})
         
         if user and verify_password(user['password'], password):
+            # 更新最后登录时间
+            users_collection.update_one(
+                {'username': username},
+                {'$set': {'last_login_time': datetime.datetime.utcnow()}}
+            )
+            
             token = generate_token(user['_id'], username)
             logger.info(f"User logged in successfully: {username}")
             return jsonify({
@@ -210,23 +221,116 @@ def check_vip():
         logger.error(f"VIP check error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# 添加VIP接口（测试用）
+# 添加VIP接口
 @app.route('/auth/add-vip/<username>', methods=['POST'])
 def add_vip(username):
     try:
         logger.info(f"Add VIP endpoint accessed for user: {username}")
+        current_time = datetime.datetime.utcnow()
+        vip_end_time = current_time + datetime.timedelta(days=365)  # 默认VIP期限为1年
+        
+        # 更新用户VIP状态
         result = users_collection.update_one(
             {'username': username},
-            {'$set': {'is_vip': True}}
+            {
+                '$set': {
+                    'is_vip': True,
+                    'vip_start_time': current_time,
+                    'vip_end_time': vip_end_time
+                },
+                '$push': {
+                    'vip_history': {
+                        'action': 'granted',
+                        'timestamp': current_time,
+                        'end_time': vip_end_time
+                    }
+                }
+            }
         )
         
         if result.modified_count > 0:
             logger.info(f"VIP status added for user: {username}")
-            return jsonify({'message': f'已将用户 {username} 设置为VIP'})
+            return jsonify({
+                'message': f'已将用户 {username} 设置为VIP',
+                'vip_start_time': current_time.isoformat(),
+                'vip_end_time': vip_end_time.isoformat()
+            })
         else:
             return jsonify({'error': '用户不存在'}), 404
     except Exception as e:
         logger.error(f"Add VIP error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# 新增：获取用户VIP详情接口
+@app.route('/auth/vip-details/<username>', methods=['GET'])
+def get_vip_details(username):
+    try:
+        logger.info(f"Get VIP details endpoint accessed for user: {username}")
+        user = users_collection.find_one({'username': username})
+        
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+            
+        vip_info = {
+            'username': username,
+            'is_vip': user.get('is_vip', False),
+            'vip_start_time': user.get('vip_start_time'),
+            'vip_end_time': user.get('vip_end_time'),
+            'vip_history': user.get('vip_history', [])
+        }
+        
+        return jsonify(vip_info)
+    except Exception as e:
+        logger.error(f"Get VIP details error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# 新增：获取所有用户列表接口
+@app.route('/auth/users', methods=['GET'])
+def get_users():
+    try:
+        logger.info("Get users list endpoint accessed")
+        
+        # 验证token
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            logger.error("Missing or invalid Authorization header")
+            return jsonify({'error': '未授权'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # 验证token并获取用户信息
+            payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+            requesting_user = users_collection.find_one({'username': payload['username']})
+            
+            if not requesting_user:
+                logger.error(f"User not found: {payload['username']}")
+                return jsonify({'error': '用户不存在'}), 404
+                
+            # 获取所有用户列表
+            users = list(users_collection.find({}, {
+                'password': 0  # 排除密码字段
+            }))
+            
+            # 转换ObjectId为字符串
+            for user in users:
+                user['_id'] = str(user['_id'])
+                
+            logger.info(f"Successfully retrieved {len(users)} users")
+            return jsonify({
+                'users': users,
+                'total': len(users)
+            })
+            
+        except jwt.ExpiredSignatureError:
+            logger.error("Token expired")
+            return jsonify({'error': 'token已过期'}), 401
+        except jwt.InvalidTokenError:
+            logger.error("Invalid token")
+            return jsonify({'error': '无效的token'}), 401
+            
+    except Exception as e:
+        logger.error(f"Get users error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # Set debug mode
