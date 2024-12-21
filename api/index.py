@@ -235,62 +235,8 @@ def test_route():
     logger.info("Test route accessed")
     return jsonify({'message': 'Test route working!'})
 
-# Vercel handler
-def handler(event, context):
-    try:
-        logger.info("Handler function called")
-        logger.info(f"Event: {event}")
-        
-        # Extract request information
-        path = event.get('path', '/')
-        http_method = event.get('httpMethod', 'GET')
-        headers = event.get('headers', {})
-        body = event.get('body', '')
-        query_params = event.get('queryStringParameters', {})
-        
-        logger.info(f"Processing {http_method} request to {path}")
-        
-        # Create a new request context
-        ctx = app.test_request_context(
-            path=path,
-            method=http_method,
-            headers=headers,
-            data=body,
-            query_string=query_params
-        )
-        
-        with ctx:
-            # Dispatch the request to Flask
-            try:
-                response = app.full_dispatch_request()
-                return {
-                    'statusCode': response.status_code,
-                    'headers': dict(response.headers),
-                    'body': response.get_data(as_text=True)
-                }
-            except Exception as e:
-                logger.error(f"Error dispatching request: {str(e)}")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps({
-                        'error': 'Internal Server Error',
-                        'message': str(e)
-                    })
-                }
-    except Exception as e:
-        error_message = str(e)
-        stack_trace = traceback.format_exc()
-        logger.error(f"Error in handler: {error_message}")
-        logger.error(f"Traceback: {stack_trace}")
-        
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': 'Internal Server Error',
-                'message': error_message,
-                'traceback': stack_trace
-            })
-        }
-
-# Add this at the end of the file
+# Remove the handler function and just export the app
 app.debug = True
+
+# Export the Flask app directly
+app = app
