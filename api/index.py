@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS, cross_origin
+from flask_cors import CORS
 from pymongo import MongoClient
 import os
 import json
@@ -15,23 +15,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # CORS配置
-cors_config = {
-    "origins": ["https://shiningjohci.github.io"],
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
-    "expose_headers": ["Content-Type", "Authorization"],
-    "supports_credentials": True,
-    "max_age": 86400,
-    "send_wildcard": False,
-    "vary_header": True
-}
-
-# 为所有API路由启用CORS
 CORS(app, 
-     resources={
-         r"/api/*": cors_config,
-         r"/": cors_config
-     })
+    origins=["https://shiningjohci.github.io"],
+    allow_credentials=True,
+    supports_credentials=True,
+    resources={
+        r"/api/*": {
+            "origins": ["https://shiningjohci.github.io"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True,
+            "send_wildcard": False
+        }
+    })
 
 # MongoDB连接
 MONGODB_URI = os.environ.get('MONGODB_URI')
@@ -51,6 +48,12 @@ def after_request(response):
     logger.debug(f"Response Status: {response.status}")
     logger.debug(f"Response Headers: {dict(response.headers)}")
     
+    # 确保CORS头部正确设置
+    response.headers.add('Access-Control-Allow-Origin', 'https://shiningjohci.github.io')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With')
+    
     # 添加安全头部
     response.headers.add('X-Content-Type-Options', 'nosniff')
     response.headers.add('X-Frame-Options', 'DENY')
@@ -61,7 +64,6 @@ def after_request(response):
 # 处理OPTIONS请求
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
 @app.route('/<path:path>', methods=['OPTIONS'])
-@cross_origin(**cors_config)
 def handle_options(path):
     logger.debug(f"Handling OPTIONS request for path: {path}")
     response = jsonify({'status': 'ok'})
@@ -69,13 +71,11 @@ def handle_options(path):
 
 # 根路由
 @app.route('/')
-@cross_origin(**cors_config)
 def home():
     return jsonify({"message": "Welcome to the Chrome Extension API"}), 200
 
 # 用户注册
 @app.route('/api/register', methods=['POST'])
-@cross_origin(**cors_config)
 def register():
     try:
         logger.debug("Processing registration request")
@@ -107,7 +107,6 @@ def register():
 
 # 用户登录
 @app.route('/api/login', methods=['POST'])
-@cross_origin(**cors_config)
 def login():
     try:
         logger.debug("Processing login request")
@@ -137,7 +136,6 @@ def login():
 
 # 检查VIP状态
 @app.route('/api/check-vip', methods=['POST'])
-@cross_origin(**cors_config)
 def check_vip():
     try:
         logger.debug("Processing check-vip request")
@@ -159,7 +157,6 @@ def check_vip():
 
 # 添加VIP状态
 @app.route('/api/add-vip', methods=['POST'])
-@cross_origin(**cors_config)
 def add_vip():
     try:
         logger.debug("Processing add-vip request")
@@ -212,7 +209,6 @@ def add_vip():
 
 # 获取所有用户
 @app.route('/api/users', methods=['GET'])
-@cross_origin(**cors_config)
 def get_users():
     try:
         logger.debug("Processing get users request")
@@ -227,7 +223,6 @@ def get_users():
 
 # 删除用户
 @app.route('/api/users/<username>', methods=['DELETE'])
-@cross_origin(**cors_config)
 def delete_user(username):
     try:
         logger.debug(f"Processing delete user request for {username}")
@@ -242,7 +237,6 @@ def delete_user(username):
 
 # 更新用户
 @app.route('/api/users/<username>', methods=['PUT'])
-@cross_origin(**cors_config)
 def update_user(username):
     try:
         logger.debug(f"Processing update user request for {username}")
@@ -267,7 +261,6 @@ def update_user(username):
 
 # 获取VIP详情
 @app.route('/api/vip-details/<username>', methods=['GET'])
-@cross_origin(**cors_config)
 def get_vip_details(username):
     try:
         logger.debug(f"Processing get VIP details request for {username}")
