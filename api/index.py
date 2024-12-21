@@ -19,11 +19,11 @@ CORS(app,
     resources={
         r"/api/*": {
             "origins": ["https://shiningjohci.github.io"],
-            "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+            "allow_headers": ["Authorization", "Content-Type", "Accept", "X-Requested-With", "DNT", "Referer", "User-Agent"],
             "expose_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "supports_credentials": True,
-            "max_age": 600,  # 10分钟缓存预检请求结果
+            "max_age": 600,
             "allow_credentials": True
         }
     })
@@ -41,18 +41,23 @@ def before_request():
     logger.debug(f"Request Headers: {dict(request.headers)}")
     logger.debug(f"Request Origin: {request.headers.get('Origin')}")
     logger.debug(f"Request Content-Type: {request.headers.get('Content-Type')}")
+    logger.debug(f"Request Authorization: {request.headers.get('Authorization', 'Not provided')[:20]}...")
 
     # 处理预检请求
     if request.method == 'OPTIONS':
         response = make_response()
         origin = request.headers.get('Origin')
         if origin == "https://shiningjohci.github.io":
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Max-Age'] = '600'
-            response.headers['Content-Type'] = 'text/plain'
+            response.headers.update({
+                'Access-Control-Allow-Origin': origin,
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, X-Requested-With, DNT, Referer, User-Agent',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Max-Age': '600',
+                'Access-Control-Expose-Headers': 'Content-Type, Authorization',
+                'Content-Type': 'text/plain',
+                'Vary': 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'
+            })
         return response, 200
 
 # 全局响应处理
@@ -63,28 +68,29 @@ def after_request(response):
     
     origin = request.headers.get('Origin')
     if origin == "https://shiningjohci.github.io":
-        # CORS headers
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
-        response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Max-Age'] = '600'
+        response.headers.update({
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, X-Requested-With, DNT, Referer, User-Agent',
+            'Access-Control-Expose-Headers': 'Content-Type, Authorization',
+            'Access-Control-Max-Age': '600',
+            'Vary': 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
+            'Cache-Control': 'no-cache'
+        })
         
         # 处理 Content-Type
         if request.method == 'OPTIONS':
             response.headers['Content-Type'] = 'text/plain'
         elif 'Content-Type' not in response.headers:
             response.headers['Content-Type'] = 'application/json'
-        
-        # 缓存控制
-        response.headers['Vary'] = 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'
-        response.headers['Cache-Control'] = 'no-cache'
     
     # 安全头部
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers.update({
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block'
+    })
     
     logger.debug(f"Response Headers after: {dict(response.headers)}")
     return response
