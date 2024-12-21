@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from pymongo import MongoClient
 import os
@@ -42,6 +42,19 @@ def before_request():
     logger.debug(f"Request Origin: {request.headers.get('Origin')}")
     logger.debug(f"Request Content-Type: {request.headers.get('Content-Type')}")
 
+    # 处理预检请求
+    if request.method == 'OPTIONS':
+        response = make_response()
+        origin = request.headers.get('Origin')
+        if origin == "https://shiningjohci.github.io":
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Max-Age'] = '600'
+            response.headers['Content-Type'] = 'text/plain'
+        return response, 200
+
 # 全局响应处理
 @app.after_request
 def after_request(response):
@@ -83,7 +96,7 @@ def handle_options(path):
     logger.debug(f"Handling OPTIONS request for path: {path}")
     logger.debug(f"OPTIONS request headers: {dict(request.headers)}")
     
-    response = jsonify({'status': 'ok'})
+    response = make_response()
     response.headers['Content-Type'] = 'text/plain'
     return response, 200
 

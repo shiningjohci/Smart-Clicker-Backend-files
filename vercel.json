@@ -9,6 +9,11 @@
     "routes": [
         {
             "src": "/api/(.*)",
+            "methods": ["OPTIONS"],
+            "dest": "api/index.py"
+        },
+        {
+            "src": "/api/(.*)",
             "dest": "api/index.py"
         },
         {
