@@ -229,14 +229,5 @@ def add_vip(username):
         logger.error(f"Add VIP error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# 测试路由
-@app.route('/test')
-def test_route():
-    logger.info("Test route accessed")
-    return jsonify({'message': 'Test route working!'})
-
-# Remove the handler function and just export the app
+# Set debug mode
 app.debug = True
-
-# Export the Flask app directly
-app = app
