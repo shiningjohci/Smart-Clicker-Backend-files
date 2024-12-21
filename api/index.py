@@ -5,17 +5,23 @@ import os
 import json
 from datetime import datetime
 from bson import ObjectId
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # 初始化Flask应用
 app = Flask(__name__)
-CORS(app, resources={
-    r"/*": {
-        "origins": ["https://shiningjohci.github.io"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "Accept"],
-        "supports_credentials": True
-    }
-})
+CORS(app, 
+     resources={r"/*": {
+         "origins": ["https://shiningjohci.github.io"],
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+         "supports_credentials": True,
+         "max_age": 86400
+     }},
+     supports_credentials=True)
 
 # MongoDB连接
 MONGODB_URI = os.environ.get('MONGODB_URI')
@@ -26,18 +32,26 @@ users_collection = db.users
 # 全局CORS处理
 @app.after_request
 def after_request(response):
+    logger.debug(f"Request Method: {request.method}")
+    logger.debug(f"Request Headers: {dict(request.headers)}")
+    logger.debug(f"Response Headers before modification: {dict(response.headers)}")
+    
     response.headers.add('Access-Control-Allow-Origin', 'https://shiningjohci.github.io')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     response.headers.add('Access-Control-Max-Age', '86400')
+    
+    logger.debug(f"Response Headers after modification: {dict(response.headers)}")
     return response
 
 # 处理OPTIONS请求
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
 @app.route('/<path:path>', methods=['OPTIONS'])
 def handle_options(path):
-    return '', 204
+    logger.debug(f"Handling OPTIONS request for path: {path}")
+    response = jsonify({'status': 'ok'})
+    return response, 200
 
 # 根路由
 @app.route('/')
@@ -48,6 +62,7 @@ def home():
 @app.route('/api/register', methods=['POST'])
 def register():
     try:
+        logger.debug("Processing registration request")
         data = request.get_json()
         username = data.get('username')
         password = data.get('password')
@@ -71,12 +86,14 @@ def register():
         return jsonify({"message": "User registered successfully", "user_id": str(result.inserted_id)}), 201
         
     except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 用户登录
 @app.route('/api/login', methods=['POST'])
 def login():
     try:
+        logger.debug("Processing login request")
         data = request.get_json()
         username = data.get('username')
         password = data.get('password')
@@ -98,12 +115,14 @@ def login():
         }), 200
         
     except Exception as e:
+        logger.error(f"Login error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 检查VIP状态
 @app.route('/api/check-vip', methods=['POST'])
 def check_vip():
     try:
+        logger.debug("Processing check-vip request")
         data = request.get_json()
         username = data.get('username')
         
@@ -117,12 +136,14 @@ def check_vip():
         return jsonify({"is_vip": user.get('is_vip', False)}), 200
         
     except Exception as e:
+        logger.error(f"Check VIP error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 添加VIP状态
 @app.route('/api/add-vip', methods=['POST'])
 def add_vip():
     try:
+        logger.debug("Processing add-vip request")
         data = request.get_json()
         username = data.get('username')
         
@@ -140,36 +161,42 @@ def add_vip():
         return jsonify({"message": "VIP status added successfully"}), 200
         
     except Exception as e:
+        logger.error(f"Add VIP error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 获取所有用户
 @app.route('/api/users', methods=['GET'])
 def get_users():
     try:
+        logger.debug("Processing get users request")
         users = list(users_collection.find())
         for user in users:
             user['_id'] = str(user['_id'])
         return jsonify({"users": users}), 200
         
     except Exception as e:
+        logger.error(f"Get users error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 删除用户
 @app.route('/api/users/<username>', methods=['DELETE'])
 def delete_user(username):
     try:
+        logger.debug(f"Processing delete user request for {username}")
         result = users_collection.delete_one({"username": username})
         if result.deleted_count == 0:
             return jsonify({"error": "User not found"}), 404
         return jsonify({"message": "User deleted successfully"}), 200
         
     except Exception as e:
+        logger.error(f"Delete user error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 # 更新用户
 @app.route('/api/users/<username>', methods=['PUT'])
 def update_user(username):
     try:
+        logger.debug(f"Processing update user request for {username}")
         data = request.get_json()
         if not data:
             return jsonify({"error": "No update data provided"}), 400
@@ -186,4 +213,5 @@ def update_user(username):
         return jsonify({"message": "User updated successfully"}), 200
         
     except Exception as e:
+        logger.error(f"Update user error: {str(e)}")
         return jsonify({"error": str(e)}), 500 
