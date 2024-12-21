@@ -246,37 +246,37 @@ def handler(event, context):
         http_method = event.get('httpMethod', 'GET')
         headers = event.get('headers', {})
         body = event.get('body', '')
+        query_params = event.get('queryStringParameters', {})
         
         logger.info(f"Processing {http_method} request to {path}")
         
-        # Create test client
-        with app.test_client() as client:
-            # Convert body to bytes if it's a string
-            if isinstance(body, str) and body:
-                body = body.encode('utf-8')
-            
-            # Make the request
-            response = client.open(
-                path,
-                method=http_method,
-                headers=headers,
-                data=body
-            )
-            
-            # Get response data
-            response_data = response.get_data(as_text=True)
-            response_headers = dict(response.headers)
-            status_code = response.status_code
-            
-            logger.info(f"Response status code: {status_code}")
-            
-            # Return response in Vercel format
-            return {
-                'statusCode': status_code,
-                'headers': response_headers,
-                'body': response_data
-            }
-            
+        # Create a new request context
+        ctx = app.test_request_context(
+            path=path,
+            method=http_method,
+            headers=headers,
+            data=body,
+            query_string=query_params
+        )
+        
+        with ctx:
+            # Dispatch the request to Flask
+            try:
+                response = app.full_dispatch_request()
+                return {
+                    'statusCode': response.status_code,
+                    'headers': dict(response.headers),
+                    'body': response.get_data(as_text=True)
+                }
+            except Exception as e:
+                logger.error(f"Error dispatching request: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'error': 'Internal Server Error',
+                        'message': str(e)
+                    })
+                }
     except Exception as e:
         error_message = str(e)
         stack_trace = traceback.format_exc()
@@ -291,3 +291,6 @@ def handler(event, context):
                 'traceback': stack_trace
             })
         }
+
+# Add this at the end of the file
+app.debug = True
