@@ -236,61 +236,53 @@ def test_route():
     return jsonify({'message': 'Test route working!'})
 
 # Vercel handler
-def handler(request):
+def handler(event, context):
     try:
-        logger.info(f"Request received: {request.get('path', '/')}")
-        logger.info(f"Request method: {request.get('method', 'GET')}")
-        logger.info(f"Request headers: {request.get('headers', {})}")
+        logger.info("Handler function called")
+        logger.info(f"Event: {event}")
         
-        # Create a new WSGI environment dictionary
-        environ = {
-            'wsgi.version': (1, 0),
-            'wsgi.url_scheme': 'https',
-            'wsgi.input': request.get('body', ''),
-            'wsgi.errors': sys.stderr,
-            'wsgi.multithread': False,
-            'wsgi.multiprocess': False,
-            'wsgi.run_once': False,
-            'REQUEST_METHOD': request.get('method', 'GET'),
-            'PATH_INFO': request.get('path', '/'),
-            'SERVER_NAME': 'vercel',
-            'SERVER_PORT': '443',
-            'SERVER_PROTOCOL': 'HTTP/1.1',
-            'CONTENT_TYPE': request.get('headers', {}).get('content-type', ''),
-            'CONTENT_LENGTH': request.get('headers', {}).get('content-length', ''),
-        }
-
-        # Add HTTP headers
-        if 'headers' in request:
-            for key, value in request['headers'].items():
-                key = key.upper().replace('-', '_')
-                if key not in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
-                    key = f'HTTP_{key}'
-                environ[key] = value
-
-        # Handle the request
-        response_data = {}
-        def start_response(status, headers):
-            response_data['status'] = status
-            response_data['headers'] = headers
-
-        # Get response body
-        response_body = app(environ, start_response)
+        # Extract request information
+        path = event.get('path', '/')
+        http_method = event.get('httpMethod', 'GET')
+        headers = event.get('headers', {})
+        body = event.get('body', '')
         
-        # Log response
-        logger.info(f"Response status: {response_data['status']}")
+        logger.info(f"Processing {http_method} request to {path}")
         
-        # Return response
-        return {
-            'statusCode': int(response_data['status'].split()[0]),
-            'headers': dict(response_data['headers']),
-            'body': b''.join(response_body).decode('utf-8')
-        }
+        # Create test client
+        with app.test_client() as client:
+            # Convert body to bytes if it's a string
+            if isinstance(body, str) and body:
+                body = body.encode('utf-8')
+            
+            # Make the request
+            response = client.open(
+                path,
+                method=http_method,
+                headers=headers,
+                data=body
+            )
+            
+            # Get response data
+            response_data = response.get_data(as_text=True)
+            response_headers = dict(response.headers)
+            status_code = response.status_code
+            
+            logger.info(f"Response status code: {status_code}")
+            
+            # Return response in Vercel format
+            return {
+                'statusCode': status_code,
+                'headers': response_headers,
+                'body': response_data
+            }
+            
     except Exception as e:
         error_message = str(e)
         stack_trace = traceback.format_exc()
         logger.error(f"Error in handler: {error_message}")
         logger.error(f"Traceback: {stack_trace}")
+        
         return {
             'statusCode': 500,
             'body': json.dumps({
