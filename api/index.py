@@ -5,8 +5,9 @@ import datetime
 import hashlib
 import os
 from pymongo import MongoClient
-from http.server import BaseHTTPRequestHandler
 import json
+import sys
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -15,14 +16,25 @@ CORS(app)
 MONGODB_URI = os.getenv('MONGODB_URI', 'your-mongodb-uri')
 SECRET_KEY = os.getenv('JWT_SECRET', 'your-secret-key')
 
+# 设置日志
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # 连接MongoDB
-client = MongoClient(MONGODB_URI)
-db = client.get_database('user_auth_db')
-users_collection = db.get_collection('users')
+try:
+    client = MongoClient(MONGODB_URI)
+    db = client.get_database('user_auth_db')
+    users_collection = db.get_collection('users')
+    logger.info("MongoDB connection successful")
+except Exception as e:
+    logger.error(f"MongoDB connection error: {str(e)}")
+    raise
 
 # 根路由
 @app.route('/')
 def index():
+    logger.info("Root route accessed")
     return jsonify({
         'status': 'ok',
         'message': 'API is running'
@@ -31,6 +43,7 @@ def index():
 # 错误处理
 @app.errorhandler(404)
 def not_found(e):
+    logger.error(f"404 error: {str(e)}")
     return jsonify({
         'error': 'Not found',
         'message': 'The requested URL was not found on the server'
@@ -38,6 +51,7 @@ def not_found(e):
 
 @app.errorhandler(500)
 def server_error(e):
+    logger.error(f"500 error: {str(e)}")
     return jsonify({
         'error': 'Internal server error',
         'message': str(e)
@@ -45,12 +59,16 @@ def server_error(e):
 
 # 生成JWT token
 def generate_token(user_id, username):
-    payload = {
-        'user_id': str(user_id),
-        'username': username,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    try:
+        payload = {
+            'user_id': str(user_id),
+            'username': username,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
+        }
+        return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    except Exception as e:
+        logger.error(f"Token generation error: {str(e)}")
+        raise
 
 # 验证密码
 def verify_password(stored_password, provided_password):
@@ -60,6 +78,7 @@ def verify_password(stored_password, provided_password):
 @app.route('/auth/register', methods=['POST'])
 def register():
     try:
+        logger.info("Register endpoint accessed")
         data = request.get_json()
         username = data.get('username')
         password = data.get('password')
@@ -86,19 +105,21 @@ def register():
         # 生成token
         token = generate_token(result.inserted_id, username)
         
+        logger.info(f"User registered successfully: {username}")
         return jsonify({
             'message': '注册成功',
             'username': username,
             'token': token
         })
     except Exception as e:
-        app.logger.error(f'Registration error: {str(e)}')
+        logger.error(f"Registration error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # 登录接口
 @app.route('/auth/login', methods=['POST'])
 def login():
     try:
+        logger.info("Login endpoint accessed")
         data = request.get_json()
         username = data.get('username')
         password = data.get('password')
@@ -110,6 +131,7 @@ def login():
         
         if user and verify_password(user['password'], password):
             token = generate_token(user['_id'], username)
+            logger.info(f"User logged in successfully: {username}")
             return jsonify({
                 'message': '登录成功',
                 'username': username,
@@ -118,13 +140,14 @@ def login():
         else:
             return jsonify({'error': '用户名或密码错误'}), 401
     except Exception as e:
-        app.logger.error(f'Login error: {str(e)}')
+        logger.error(f"Login error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # 检查VIP状态接口
 @app.route('/auth/check-vip', methods=['GET'])
 def check_vip():
     try:
+        logger.info("Check VIP endpoint accessed")
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'error': '未授权'}), 401
@@ -137,48 +160,55 @@ def check_vip():
         if not user:
             return jsonify({'error': '用户不存在'}), 404
         
-        return jsonify({
-            'isVip': bool(user.get('is_vip', False))
-        })
+        is_vip = bool(user.get('is_vip', False))
+        logger.info(f"VIP status checked for user {payload['username']}: {is_vip}")
+        return jsonify({'isVip': is_vip})
     except jwt.ExpiredSignatureError:
+        logger.error("Token expired")
         return jsonify({'error': 'token已过期'}), 401
     except jwt.InvalidTokenError:
+        logger.error("Invalid token")
         return jsonify({'error': '无效的token'}), 401
     except Exception as e:
-        app.logger.error(f'VIP check error: {str(e)}')
+        logger.error(f"VIP check error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # 添加VIP接口（测试用）
 @app.route('/auth/add-vip/<username>', methods=['POST'])
 def add_vip(username):
     try:
+        logger.info(f"Add VIP endpoint accessed for user: {username}")
         result = users_collection.update_one(
             {'username': username},
             {'$set': {'is_vip': True}}
         )
         
         if result.modified_count > 0:
+            logger.info(f"VIP status added for user: {username}")
             return jsonify({'message': f'已将用户 {username} 设置为VIP'})
         else:
             return jsonify({'error': '用户不存在'}), 404
     except Exception as e:
-        app.logger.error(f'Add VIP error: {str(e)}')
+        logger.error(f"Add VIP error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # 测试路由
 @app.route('/test')
 def test_route():
+    logger.info("Test route accessed")
     return jsonify({'message': 'Test route working!'})
 
 # Vercel handler
 def handler(request):
     try:
+        logger.info(f"Request received: {request.get('path', '/')}")
+        
         # Create a new WSGI environment dictionary
         environ = {
             'wsgi.version': (1, 0),
             'wsgi.url_scheme': 'https',
             'wsgi.input': request.get('body', ''),
-            'wsgi.errors': '',
+            'wsgi.errors': sys.stderr,
             'wsgi.multithread': False,
             'wsgi.multiprocess': False,
             'wsgi.run_once': False,
@@ -186,6 +216,7 @@ def handler(request):
             'PATH_INFO': request.get('path', '/'),
             'SERVER_NAME': 'vercel',
             'SERVER_PORT': '443',
+            'SERVER_PROTOCOL': 'HTTP/1.1'
         }
 
         # Add HTTP headers
@@ -212,11 +243,13 @@ def handler(request):
             'body': b''.join(response_body).decode('utf-8')
         }
     except Exception as e:
-        print(f"Error in handler: {str(e)}")  # 添加日志
+        logger.error(f"Error in handler: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return {
             'statusCode': 500,
             'body': json.dumps({
                 'error': 'Internal Server Error',
-                'message': str(e)
+                'message': str(e),
+                'traceback': traceback.format_exc()
             })
         }
